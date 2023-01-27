@@ -1,0 +1,211 @@
+/*
+    Ring Outdoor Siren
+
+    Copyright 2020 -> 2021 Hubitat Inc.  All Rights Reserved
+
+*/
+
+import groovy.transform.Field
+import groovy.json.JsonOutput
+
+metadata {
+
+    definition (name: "Ring Outdoor Siren Custom", namespace: "hubitat", author: "Dagaz") {
+        capability "Actuator"
+        capability "Alarm"
+        command "LogoOn"
+        command "LogoOff"
+        command "GreenOn"
+        command "GreenOff"
+        
+        attribute "Logo", "STRING"
+        attribute "GreenRing", "STRING"
+        
+    }
+    
+    preferences {
+        configParams.each { input it.value.input }
+        input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
+        input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
+    }
+}
+
+void initializeVars() {
+    // first run only
+    sendEvent(name:"Logo", value: "off")
+    sendEvent(name:"GreenRing", value: "off")
+    state.initialized=true
+}
+
+
+void logsOff(){
+    log.warn "debug logging disabled..."
+    device.updateSetting("logEnable", [value:"false", type:"bool"])
+}
+
+void strobe() {
+    if (logEnable) log.debug "strobe()"
+    eventProcess(name:"alarm", value:"strobe")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:0x64]]).format())
+    sendToDevice(cmds)
+}
+
+void siren() {
+    if (logEnable) log.debug "siren()"
+    eventProcess(name:"alarm", value:"siren")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:9, value:0x01]]).format())
+    sendToDevice(cmds)
+}
+
+void both() {
+    if (logEnable) log.debug "both()"
+    eventProcess(name:"alarm", value:"both")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:0x64]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:9, value:0x64]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:7, value:0x64]]).format())
+    sendToDevice(cmds)}
+
+void off() {
+    if (logEnable) log.debug "off()"
+    eventProcess(name:"alarm", value:"off")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:9, value:0x00]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:0x00]]).format())
+    sendToDevice(cmds)}
+
+// standard config
+
+List<String> runConfigs() {
+    List<String> cmds = []
+    configParams.each { param, data ->
+        if (settings[data.input.name]) {
+            cmds.addAll(configCmd(param, data.parameterSize, settings[data.input.name]))
+        }
+    }
+    return cmds
+}
+
+List<String> pollConfigs() {
+    List<String> cmds = []
+    configParams.each { param, data ->
+        if (settings[data.input.name]) {
+            cmds.add(zwave.configurationV1.configurationGet(parameterNumber: param.toInteger()).format())
+        }
+    }
+    return cmds
+}
+
+List<String> configCmd(parameterNumber, size, scaledConfigurationValue) {
+    List<String> cmds = []
+    cmds.add(zwave.configurationV1.configurationSet(parameterNumber: parameterNumber.toInteger(), size: size.toInteger(), scaledConfigurationValue: scaledConfigurationValue.toInteger()).format())
+    cmds.add(zwave.configurationV1.configurationGet(parameterNumber: parameterNumber.toInteger()).format())
+    return cmds
+}
+
+void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
+    if(configParams[cmd.parameterNumber.toInteger()]) {
+        Map configParam = configParams[cmd.parameterNumber.toInteger()]
+        int scaledValue
+        cmd.configurationValue.reverse().eachWithIndex { v, index ->
+            scaledValue = scaledValue | v << (8 * index)
+        }
+        device.updateSetting(configParam.input.name, [value: "${scaledValue}", type: configParam.input.type])
+    }
+}
+
+// event filter
+
+void eventProcess(Map evt) {
+    if (txtEnable && evt.descriptionText) log.info evt.descriptionText
+    if (device.currentValue(evt.name).toString() != evt.value.toString()) {
+        sendEvent(evt)
+    }
+}
+
+// universal
+
+void zwaveEvent(hubitat.zwave.Command cmd) {
+    if (logEnable) log.debug "skip:${cmd}"
+}
+
+void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
+    hubitat.zwave.Command encapsulatedCommand = cmd.encapsulatedCommand(CMD_CLASS_VERS)
+    if (encapsulatedCommand) {
+        zwaveEvent(encapsulatedCommand)
+    }
+}
+
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
+    if (logEnable) log.debug "Supervision Get - SessionID: ${cmd.sessionID}, CC: ${cmd.commandClassIdentifier}, Command: ${cmd.commandIdentifier}"
+    if (cmd.commandClassIdentifier == 0x6F) {
+        parseEntryControl(cmd.commandIdentifier, cmd.commandByte)
+    } else {
+        hubitat.zwave.Command encapsulatedCommand = cmd.encapsulatedCommand(CMD_CLASS_VERS)
+        if (encapsulatedCommand) {
+            zwaveEvent(encapsulatedCommand)
+        }
+    }
+    // device quirk requires this to be unsecure reply
+    sendToDevice(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0).format())
+    //sendHubCommand(new hubitat.device.HubAction(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0).format(), hubitat.device.Protocol.ZWAVE))
+}
+
+void parse(String description) {
+    if (logEnable) log.debug "parse:${description}"
+    hubitat.zwave.Command cmd = zwave.parse(description, CMD_CLASS_VERS)
+    if (cmd) {
+        zwaveEvent(cmd)
+    }
+}
+
+void sendToDevice(List<String> cmds, Long delay=300) {
+    sendHubCommand(new hubitat.device.HubMultiAction(commands(cmds, delay), hubitat.device.Protocol.ZWAVE))
+}
+
+void sendToDevice(String cmd, Long delay=300) {
+    sendHubCommand(new hubitat.device.HubAction(zwaveSecureEncap(cmd), hubitat.device.Protocol.ZWAVE))
+}
+
+def LogoOn() {
+    if (logEnable) log.debug "LogoOn()"
+    eventProcess(name:"Logo", value:"On")
+    List<String> cmds=[]
+            cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x30, propertyId:1, value:0x64]]).format())  
+    sendToDevice(cmds)
+    sendEvent(name:"Logo", value: "On", isStateChange:true)
+}
+def LogoOff() {
+    if (logEnable) log.debug "LogoOff()"
+    eventProcess(name:"Logo", value:"Off")
+    List<String> cmds=[]
+            cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x30, propertyId:1, value:0x00]]).format())  
+    sendToDevice(cmds)
+    sendEvent(name:"Logo", value: "Off", isStateChange:true)
+}
+
+
+def GreenOn() {
+    if (logEnable) log.debug "GreenOn()"
+    eventProcess(name:"GreenRing", value:"On")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x50, propertyId:1, value:0x64]]).format())
+    sendToDevice(cmds)
+    sendEvent(name:"GreenRing", value: "On", isStateChange:true)
+}
+def GreenOff() {
+    if (logEnable) log.debug "GreenOff()"
+    eventProcess(name:"GreenRing", value:"Off")
+    List<String> cmds=[]
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x50, propertyId:1, value:0x00]]).format())
+    sendToDevice(cmds)
+    sendEvent(name:"Logo", value: "Off", isStateChange:true)    
+}
+
+
+
+List<String> commands(List<String> cmds, Long delay=300) {
+    return delayBetween(cmds.collect{ zwaveSecureEncap(it) }, delay)
+}

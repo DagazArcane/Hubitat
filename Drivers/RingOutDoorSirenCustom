@@ -64,7 +64,7 @@ void both() {
     eventProcess(name:"alarm", value:"both")
     List<String> cmds=[]
 
-    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:2, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:0x64],[indicatorId:0x0D, propertyId:9, value:0x01]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:3, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:0x64],[indicatorId:0x0D, propertyId:9, value:0x01],[indicatorId:0x0D,propertyId:7,value:0xB4]]).format())
     
     sendToDevice(cmds)}
 

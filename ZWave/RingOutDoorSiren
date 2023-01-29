@@ -1,0 +1,40 @@
+Ring Logo
+
+  Turn On - value is brightness
+  [indicatorId:48, propertyId:1, value:100]
+
+  Turn Off
+  [indicatorId:48, propertyId:1, value:0]
+
+Time Off - value seconds
+  [indicatorId:48, propertyId:7, value:5]
+  
+Green LED
+
+  Turn On
+  [indicatorId:80, propertyId:1, value:100]
+  
+  Turn off
+  [indicatorId:80, propertyId:1, value:100]
+
+Siren
+
+  Turn On - vlaue is voulme
+  [indicatorId:13, propertyId:9, value:100]
+
+  Turn Off
+  [indicatorId:13, propertyId:9, value:0]
+
+  Time Off - value seconds
+  [indicatorId:13,propertyId:7,value:180]
+  
+Strobe
+  
+  Turn On
+  [indicatorId:13, propertyId:1, value:100]
+
+  Turn Off
+  [indicatorId:13, propertyId:1, value:0]
+
+  Time Off - value seconds
+  [indicatorId:13,propertyId:7,value:180]

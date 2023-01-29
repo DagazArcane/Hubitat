@@ -2,6 +2,11 @@
     Ring Outdoor Siren v3
 
     Copyright 2020 -> 2021 Hubitat Inc.  All Rights Reserved
+    
+    This driver is use at own risk.
+    v3.1.3 added dusk till dawn logo scheduling
+    v2.1.1 add prefrenced to change siren volume and led brighness
+    v1.1.1 basic command on and off
 
 */
 
@@ -9,7 +14,7 @@ import groovy.transform.Field
 import groovy.json.JsonOutput
 
 def version() {
-    return "3.1.4"
+    return "3.1.3"
 }
 
 metadata {
@@ -17,17 +22,16 @@ metadata {
     definition (name: "Ring Outdoor Siren (Custom)", namespace: "hubitat", author: "Dagaz") {
         capability "Actuator"
         capability "Alarm"
-        capability "Configuration"
         capability "Battery"
         capability "TamperAlert"
 		capability "PowerSource"
-        
+        capability "Refresh"
         
         command "LogoOn"
         command "LogoOff"
         command "GreenOn"
         command "GreenOff"
-        
+                
         attribute "logo", "STRING"
         attribute "green_led", "STRING"
     }
@@ -51,6 +55,7 @@ metadata {
         configParams.each { input it.value.input }
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
+        input name: "duskDawn", type: "bool", title: "Dusk till Dawn Logo", defaultValue: false
         input name: "ledLevel", type: "enum", title: "LED Level", options:[[1:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
         input name: "sirenVolume", type: "enum", title: "Siren Volume", options:[[1:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
     }
@@ -59,21 +64,59 @@ metadata {
 
 // start and configure
 
-void updated() {
-    log.info "updated..."
-    log.warn "debug logging is: ${logEnable == true}"
-    log.warn "description logging is: ${txtEnable == true}"
-    log.warn "encryption is: ${optEncrypt == true}"
-    if (logEnable) runIn(1800,logsOff)
-    sendToDevice(runConfigs())
-}
-
 void installed() {
+    log.debug "installed()"
     initializeVars()
+    commonRun()
 }
 
 void uninstalled() {
+    unschedule()
+}
 
+void initialize() {
+    log.debug "initialize()"
+    initializeVars()
+    commonRun()
+}
+
+void updated() {
+    log.debug "updated()"
+    initializeVars()
+    commonRun()
+}
+
+
+void refresh() {
+    log.debug "refresh()"
+    if (!state.initialized) initializeVars()
+    commonRun()
+}
+
+void commonRun() {
+    
+    unschedule(schSun)
+     
+    log.warn "commonrun()"
+    
+    log.warn "debug logging is: ${logEnable == true}"
+    log.warn "description logging is: ${txtEnable == true}"
+    log.warn "dusk till dawn feature is: ${duskDawn}"
+    log.warn "encryption is: ${optEncrypt == true}"
+    
+    if (!state.initialized) initializeVars()
+    if (logEnable) runIn(1800,logsOff)
+
+    runIn(5,pollDeviceData)
+    
+    if (duskDawn == true) {
+        schedule('0 0 1 ? * *', schSun)
+    } else {
+        unschedule()   
+    }
+    if (duskDawn == true) {
+        schSun()
+    }
 }
 
 void initializeVars() {
@@ -82,16 +125,42 @@ void initializeVars() {
     sendEvent(name:"green_led", value: "off")
     sendEvent(name:"battery", value:100)
     sendEvent(name:"powersource", value:"battery")
-    sendEvent(name:"alarm", value:"off")
-    
+    sendEvent(name:"alarm", value:"off")    
     state.initialized=true
 }
 
+void schSun() {
+    
+    log.info "sunrise is: ${location.sunrise}"
+    log.info "sunset is: ${location.sunset}"
 
-void configure() {
-    if (logEnable) log.debug "configure()"
-    if (!state.initialized) initializeVars()
-    runIn(5,pollDeviceData)
+    sunriseCal=location.sunrise
+    int sunriseHour = sunriseCal.getHours()
+    int sunriseMin = sunriseCal.getMinutes()
+    log.info "sunrise time is: ${sunriseHour} ${sunriseMin}"
+
+    sunsetCal=location.sunset
+    int sunsetHour = sunsetCal.getHours()
+    int sunsetMin = sunsetCal.getMinutes()
+    log.info "sunset time is: ${sunsetHour} ${sunsetMin}"
+    
+    schedule("0 ${sunriseMin} ${sunriseHour} ? * *", sunriseCmd)
+    schedule("0 ${sunsetMin} ${sunsetHour} ? * *", sunsetCmd)
+    
+}
+
+void sunriseCmd() {
+    if (duskDawn == true) {
+        log.info "Dusk till dawn: off"
+        logoOff()   
+    }
+}
+
+void sunsetCmd() {
+    if (duskDawn == true) {
+        log.info "Dusk till dawn: on"
+        logoOn()   
+    }
 }
 
 void pollDeviceData() {
@@ -117,6 +186,7 @@ void logsOff(){
 void strobe() {
     if (logEnable) log.debug "strobe()"
     eventProcess(name:"alarm", value:"strobe")
+    state.isAlarm=true
     List<String> cmds=[]
     ledLevelInt = ledLevel.toInteger()
     if (logEnable) log.debug "LedLevel(${ledLevel} ${ledLevelHex})"
@@ -128,6 +198,7 @@ void strobe() {
 void siren() {
     if (logEnable) log.debug "siren()"
     eventProcess(name:"alarm", value:"siren")
+    state.isAlarm=true
     List<String> cmds=[]
     sirenVolumeInt = sirenVolume.toInteger()
     //turns on the siren
@@ -138,6 +209,7 @@ void siren() {
 void both() {
     if (logEnable) log.debug "both()"
     eventProcess(name:"alarm", value:"both")
+    state.isAlarm=true
     List<String> cmds=[]
     sirenVolumeInt = sirenVolume.toInteger()
     ledLevelInt = ledLevel.toInteger()
@@ -148,13 +220,13 @@ void both() {
 void off() {
     if (logEnable) log.debug "off()"
     eventProcess(name:"alarm", value:"off")
+    state.isAlarm=false
     List<String> cmds=[]
 	//turns the red LED off and teh siren off
     cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:2, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:9, value:0x00], [indicatorId:0x0D, propertyId:1, value:0x00]]).format())
     sendToDevice(cmds)}
 
-//additional buttons
-
+//additional buttons and routines
 def LogoOn() {
     if (logEnable) log.debug "LogoOn()"
     eventProcess(name:"logo", value:"on")

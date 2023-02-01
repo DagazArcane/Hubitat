@@ -15,7 +15,19 @@ Green LED
   [indicatorId:80, propertyId:1, value:100]
   
   Turn off
-  [indicatorId:80, propertyId:1, value:100]
+  [indicatorId:80, propertyId:1, value:0]
+
+  Flashing
+    [indicatorId:80, propertyId:1, value:100]
+    [indicatorId:80, propertyId:3, value:10]
+    [indicatorId:80, propertyId:4, value:1]
+    [indicatorId:80, propertyId:7, value:100]
+    
+    1 = led brightness
+    3 = 1/10 flashing
+    4 = on off cycle
+    7 = how many times to flash
+  
 
 Siren
 

@@ -4,10 +4,22 @@
     Copyright 2020 -> 2021 Hubitat Inc.  All Rights Reserved
     
     This driver is use at own risk.
+    To get working:
+    Add Siren using smartscan
+    Change driver to inbuilt and check siren works, eg turn on then off
+    Change Driver to this custom one
+    
+    v3.1.5 changed low volume from 1 to 10
     v3.1.4 fixed typo and added unschedule for sunrise and sunset
     v3.1.3 added dusk till dawn logo scheduling
     v2.1.1 add prefrenced to change siren volume and led brighness
     v1.1.1 basic command on and off
+    
+    Items to work on
+    Solid RED LED
+    Get the driver to initialise / configure so doesnt need inbuilt to set up
+    Work out how fingerprint works so this driver gets chosen
+    
 
 */
 
@@ -57,7 +69,7 @@ metadata {
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
         input name: "duskDawn", type: "bool", title: "Dusk till Dawn Logo", defaultValue: false
-        input name: "ledLevel", type: "enum", title: "LED Level", options:[[1:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
+        input name: "ledLevel", type: "enum", title: "LED Level", options:[[10:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
         input name: "sirenVolume", type: "enum", title: "Siren Volume", options:[[1:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
     }
 }

@@ -32,7 +32,7 @@ def version() {
 
 metadata {
 
-    definition (name: "Ring Outdoor Siren (Custom)", namespace: "hubitat", author: "Dagaz") {
+    definition (name: "Ring Outdoor Siren (Custom)", namespace: "DADrivers", author: "Dagaz") {
         capability "Actuator"
         capability "Alarm"
         capability "Battery"

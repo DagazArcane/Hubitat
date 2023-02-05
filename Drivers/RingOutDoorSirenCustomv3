@@ -250,7 +250,7 @@ void both() {
     sirenVolumeInt = sirenVolume.toInteger()
     ledLevelInt = ledLevel.toInteger()
     // sets the red LED flashing and the siren on 
-    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:3, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:ledLevelInt],[indicatorId:0x0D, propertyId:9, value:sirenVolumeInt]]).format()) 
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:2, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:ledLevelInt],[indicatorId:0x0D, propertyId:9, value:sirenVolumeInt]]).format()) 
     sendToDevice(cmds)
     alarmDurationInt = alarmDuration.toInteger() 
     if (alarmDurationInt != 0) {

@@ -9,6 +9,7 @@
     Change driver to inbuilt and check siren works, eg turn on then off
     Change Driver to this custom one
     
+    v3.1.6 added TamperAlarm and Duration
     v3.1.5 changed low volume from 1 to 10
     v3.1.4 fixed typo and added unschedule for sunrise and sunset
     v3.1.3 added dusk till dawn logo scheduling
@@ -27,18 +28,19 @@ import groovy.transform.Field
 import groovy.json.JsonOutput
 
 def version() {
-    return "3.1.4"
+    return "3.1.6"
 }
 
 metadata {
 
-    definition (name: "Ring Outdoor Siren (Custom)", namespace: "DADrivers", author: "Dagaz") {
+    definition (name: "Ring Outdoor Siren (Custom)", namespace: "hubitat", author: "Dagaz") {
         capability "Actuator"
         capability "Alarm"
         capability "Battery"
         capability "TamperAlert"
 		capability "PowerSource"
         capability "Refresh"
+        capability "Configuration"
         
         command "LogoOn"
         command "LogoOff"
@@ -69,13 +71,22 @@ metadata {
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
         input name: "duskDawn", type: "bool", title: "Dusk till Dawn Logo", defaultValue: false
+        input name: "tamperAlarm", type: "bool", title: "Tamper Alarm", defaultValue: false
         input name: "ledLevel", type: "enum", title: "LED Level", options:[[10:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
-        input name: "sirenVolume", type: "enum", title: "Siren Volume", options:[[1:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
+        input name: "sirenVolume", type: "enum", title: "Siren Volume", options:[[10:"Low"],[50:"Medium"],[100:"High"]], defaultValue: 100
+        input name: "alarmDuration", type: "enum", title: "Alarm Duration (Mins)", options:[[0:"Unlimited"],[10:"10 Seconds"],[60:"1 Minute"],[180:"3 Minutes"],[300:"5 Minutes"],[600:"10 Minutes"],[1800:"30 Minutes"]], defaultValue: 3
     }
 }
 
 
 // start and configure
+
+void configure() {
+    log.debug "installed()"
+    initializeVars()
+    commonRun()
+}
+
 
 void installed() {
     log.debug "installed()"
@@ -95,7 +106,7 @@ void initialize() {
 
 void updated() {
     log.debug "updated()"
-    initializeVars()
+    if (!state.initialized) initializeVars()
     commonRun()
 }
 
@@ -114,7 +125,8 @@ void commonRun() {
     
     log.warn "debug logging is: ${logEnable == true}"
     log.warn "description logging is: ${txtEnable == true}"
-    log.warn "dusk till dawn feature is: ${duskDawn}"
+    log.info "dusk till dawn feature is: ${duskDawn}"
+    log.info "tamper alarm feature is: ${tamperAlarm}"
     log.warn "encryption is: ${optEncrypt == true}"
     
     if (!state.initialized) initializeVars()
@@ -156,10 +168,9 @@ void schSun() {
     int sunsetHour = sunsetCal.getHours()
     int sunsetMin = sunsetCal.getMinutes()
     log.info "sunset time is: ${sunsetHour} ${sunsetMin}"
-
+    
     unschedule(sunriseCmd)
     unschedule(sunsetCmd)
-
     schedule("0 ${sunriseMin} ${sunriseHour} ? * *", sunriseCmd)
     schedule("0 ${sunsetMin} ${sunsetHour} ? * *", sunsetCmd)
     
@@ -205,10 +216,14 @@ void strobe() {
     state.isAlarm=true
     List<String> cmds=[]
     ledLevelInt = ledLevel.toInteger()
-    if (logEnable) log.debug "LedLevel(${ledLevel} ${ledLevelHex})"
     // sets the red LED flashing
-    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:ledLevelInt]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:13, propertyId:1, value:ledLevelInt]]).format())
     sendToDevice(cmds)
+    alarmDurationInt = alarmDuration.toInteger() 
+    if (alarmDurationInt != 0) {
+        if (logEnable) log.debug "Duration: ${alarmDurationInt}"
+        runIn(alarmDurationInt,off)
+    }
 }
 
 void siren() {
@@ -220,6 +235,11 @@ void siren() {
     //turns on the siren
     cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:9, value:sirenVolumeInt]]).format())
     sendToDevice(cmds)
+    alarmDurationInt = alarmDuration.toInteger() 
+    if (alarmDurationInt != 0) {
+        if (logEnable) log.debug "Duration: ${alarmDurationInt}"
+        runIn(alarmDurationInt,off)
+    }
 }
 
 void both() {
@@ -229,9 +249,16 @@ void both() {
     List<String> cmds=[]
     sirenVolumeInt = sirenVolume.toInteger()
     ledLevelInt = ledLevel.toInteger()
-    // sets the red LED flashing and the siren on. then turns them off after 180 seconds, 
-    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:3, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:ledLevelInt],[indicatorId:0x0D, propertyId:9, value:sirenVolumeInt],[indicatorId:0x0D,propertyId:7,value:0xB4]]).format()) 
-    sendToDevice(cmds)}
+    // sets the red LED flashing and the siren on 
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:3, value: 0, indicatorValues:[[indicatorId:0x0D, propertyId:1, value:ledLevelInt],[indicatorId:0x0D, propertyId:9, value:sirenVolumeInt]]).format()) 
+    sendToDevice(cmds)
+    alarmDurationInt = alarmDuration.toInteger() 
+    if (alarmDurationInt != 0) {
+        if (logEnable) log.debug "Duration: ${alarmDurationInt}"
+        runIn(alarmDurationInt,off)
+    }
+
+}
 
 void off() {
     if (logEnable) log.debug "off()"
@@ -271,7 +298,9 @@ def GreenOn() {
     ledLevelInt = ledLevel.toInteger()
     if (logEnable) log.debug "LedLevel(${ledLevel} ${ledLevelHex} ${briVal})"
 	//turns the green LED on
-    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:1, value: 0, indicatorValues:[[indicatorId:0x50, propertyId:1, value:ledLevelInt]]).format())
+    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:2, value: 0, indicatorValues:[[indicatorId:80, propertyId:1, value:ledLevelInt],[indicatorId:80, propertyId:7, value:0]]).format())
+    //make the green led flash
+ //    cmds.add(zwave.indicatorV3.indicatorSet(indicatorCount:4, value: 0, indicatorValues:[[indicatorId:80, propertyId:1, value:ledLevelInt],[indicatorId:80, propertyId:3, value:10],[indicatorId:80, propertyId:4, value:15],[indicatorId:80, propertyId:7, value:10]]).format())
     sendToDevice(cmds)
     sendEvent(name:"green_led", value: "on", isStateChange:true)
 }
@@ -378,6 +407,10 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd) {
                             evt.value="clear"
                             evt.isStateChange=true
                             evt.descriptionText="${device.displayName} tamper alert cover closed"
+                            if (tamperAlarm == true) {
+                                log.info "Tamper: AlarmOff"
+                                off()   
+                            }
                             break
                         case 7:
                             evt.name="motion"
@@ -416,6 +449,11 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd) {
                 evt.value="detected"
                 evt.isStateChange=true
                 evt.descriptionText="${device.displayName} tamper alert cover removed"
+                if (tamperAlarm == true) {
+                    log.info "Tamper: alarmOn"
+                    both()   
+                }
+
                 break
             case 4:
                 // Tampering, invalid code
